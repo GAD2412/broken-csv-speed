@@ -1,5 +1,5 @@
 'use strict';
-// fast.cjs: the harness program's work (main.ts only calls main()). Reads /input/cases.json and writes
+// fast.cjs: the harness program (main.ts is a symbolic link to it). Reads /input/cases.json and writes
 // /output/answers.json, doing the CSV reading on the text's JSON-escaped bytes, never decoding it into JS strings.
 //
 // Why that is exact: in the JSON text every character the CSV reading looks at is ASCII and appears as `,` or as the
@@ -8,13 +8,13 @@
 // escaped form of the field's value. A raw `"` byte can only end a JSON string: it ends the text.
 //
 // The reader is an asm.js module: V8 validates it and compiles it ahead of time, so no time goes into warming up a
-// JIT. The input is read whole into its heap; the output goes through a 1 MiB window, written out between records.
+// JIT. Input and output go through 512 KiB windows in its heap, refilled and written out between records.
 // The text comes before its "header" flag in the file, and the flag changes only the answer's first bytes, the
 // separator after the first record and the errors' row numbers: so each text is read first, with fixed-size
 // placeholders for those bytes (the padding is JSON whitespace) and errors kept as numbers, and the placeholders are
 // filled in (in the window, or in the file if already written) and the errors written once the flag is read.
 //
-// Whenever the file is not of the expected shape, or a record does not fit the window, every case is answered again
+// Whenever the file is not of the expected shape, or a record does not fit a window, every case is answered again
 // with run() from solve.js.
 
 const fs = require('node:fs');
@@ -888,3 +888,7 @@ function main() {
 }
 
 module.exports = { Csv, fastPath, slowPath, main };
+
+// main.ts is a symbolic link to this file: Node resolves it and runs it as CommonJS, with no TypeScript stripping.
+// (Were main.ts a copy of this file instead, it would be the main module just the same.)
+if (require.main === module) main();

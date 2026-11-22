@@ -1,1 +1,1 @@
-require('./fast.cjs').main();
+fast.cjs
