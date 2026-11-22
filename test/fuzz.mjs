@@ -5,6 +5,7 @@
 
 import { pathToFileURL } from 'node:url';
 import { run } from '../solve.js';
+import { transduce } from '../transduce.js';
 
 const refPath = process.argv[2];
 if (!refPath) {
@@ -127,25 +128,100 @@ for (const b of BASES) {
   }
 }
 
+// A JSON value with object keys sorted, as the scorer compares.
+function canonical(v) {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  if (v !== null && typeof v === 'object') {
+    return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(v) ?? 'null';
+}
+
+// The cases.json text with some characters written as \uXXXX escapes (valid JSON another writer could produce).
+function escapeSome(json) {
+  let s = '';
+  let inString = false;
+  for (let i = 0; i < json.length; i++) {
+    const c = json[i];
+    if (c === '\\' && inString) {
+      const n = json[i + 1] === 'u' ? 6 : 2;
+      s += json.slice(i, i + n);
+      i += n - 1;
+      continue;
+    }
+    if (c === '"') inString = !inString;
+    if (inString && c !== '"' && chance(0.05)) s += '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0');
+    else s += c;
+  }
+  return s;
+}
+
 let fails = 0;
+const tstats = { bytes: 0, value: 0, gaveUp: 0, gaveUpCanonical: 0 };
+function report(label, input, want, got) {
+  fails++;
+  if (fails <= 5) {
+    console.log(`MISMATCH ${label}: input=${JSON.stringify(input).slice(0, 2000)}`);
+    console.log(`  want ${String(want).slice(0, 600)}`);
+    console.log(`  got  ${String(got).slice(0, 600)}`);
+  }
+}
+
 function check(input, label) {
   const want = JSON.stringify(readCsv(input));
   const got = JSON.stringify(run(input));
-  if (want !== got) {
-    fails++;
-    if (fails <= 5) {
-      console.log(`MISMATCH ${label}: input=${JSON.stringify(input)}`);
-      console.log(`  want ${want.slice(0, 600)}`);
-      console.log(`  got  ${got.slice(0, 600)}`);
+  if (want !== got) report(label, input, want, got);
+}
+
+// The transducer on a batch of inputs as one cases.json: identical bytes, or identical values (escapes can differ,
+// e.g. two lone surrogates joined into a pair), or a give-up (main.ts then answers with run()).
+function checkBatch(batch, label, noncanonical) {
+  const cases = batch.map((input, i) => ({ id: `g-${String(i + 1).padStart(4, '0')}`, input }));
+  let json = JSON.stringify(cases);
+  if (noncanonical) json = escapeSome(json);
+  // What an entry is handed is the file's bytes: the expected answers are the reference's on exactly those.
+  const bytes = Buffer.from(json, 'utf8');
+  const handed = JSON.parse(bytes.toString('utf8'));
+  const want = JSON.stringify(handed.map((c) => readCsv(c.input)));
+  const got = transduce(bytes);
+  if (got === null) {
+    tstats.gaveUp++;
+    if (!noncanonical && batch.every((x) => x.header === true || x.header === false)) {
+      tstats.gaveUpCanonical++;
+      report(`${label} gave up on canonical`, batch, want, 'null');
     }
+    return;
+  }
+  const text = Buffer.from(got).toString('utf8');
+  if (text === want) tstats.bytes++;
+  else {
+    let same = false;
+    try {
+      same = canonical(JSON.parse(text)) === canonical(JSON.parse(want));
+    } catch {}
+    if (same) tstats.value++;
+    else report(`${label} transducer`, batch, want, text);
   }
 }
 
 for (let i = 0; i < exhaustive.length; i++) check(exhaustive[i], `exhaustive#${i}`);
-check({ text: '', header: true }, 'empty');
-check({ text: '', header: false }, 'empty');
-check({ text: '﻿', header: true }, 'bom');
-for (let i = 0; i < total; i++) check(makeInput(i), `case#${i}`);
+for (let i = 0; i < exhaustive.length; i += 7) checkBatch(exhaustive.slice(i, i + 7), `exhaustive-batch#${i}`, false);
+const specials = [{ text: '', header: true }, { text: '', header: false }, { text: '﻿', header: true }];
+for (const x of specials) check(x, 'special');
+checkBatch(specials, 'specials', false);
+checkBatch([], 'no cases', false);
+let batch = [];
+for (let i = 0; i < total; i++) {
+  const input = makeInput(i);
+  check(input, `case#${i}`);
+  batch.push(input);
+  if (batch.length >= 1 + (i % 5)) {
+    checkBatch(batch, `batch@${i}`, false);
+    if (i % 4 === 0) checkBatch(batch, `noncanonical@${i}`, true);
+    batch = [];
+  }
+}
 
-console.log(`${exhaustive.length + 3 + total} cases, ${fails} mismatches`);
+console.log(`${exhaustive.length + specials.length + total} cases, ${fails} mismatches`);
+console.log(`transducer: ${tstats.bytes} batches byte-identical, ${tstats.value} value-identical, ${tstats.gaveUp} gave up (${tstats.gaveUpCanonical} on canonical boolean-header input)`);
 process.exit(fails === 0 ? 0 : 1);

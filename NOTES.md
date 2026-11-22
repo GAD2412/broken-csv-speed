@@ -55,6 +55,13 @@ null `node -e 0`, mean of a set of 6 cases (about 11 MB of CSV):
 | v1 | charCodeAt pass, slices | 187-198 |
 | v2 | clean-line fast path (cached indexOf of quote / CR), native split | 184-206 (noise) |
 | v2 + flags | main.ts: --single-threaded-gc, --no-concurrent-recompilation | 183-195 |
+| v3 | byte transducer cases.json -> answers.json (transduce.js), run() as fallback | 98 |
+
+Server (dev phase, gVisor, 3 runs): v2 = 1.25 s median (the board's run()-based entries sit at 1.2-2 s; the top 30
+are byte-level transducers at 0-30 ms).
+
+v3 phases locally: process start with TypeScript stripping 22 ms, read 1 ms, transduce 67 ms (a warm second call
+takes 30 ms: the cold call pays for JIT tiering and deopts on branches with no feedback yet), write 1.5 ms.
 
 Phase split of v1 in one process: read 13 ms, JSON.parse 12, run (6 cases) 95, JSON.stringify 23, UTF-8 encode 8.
 Floor for the run phase (only slicing every field, wrong answers): about 80 ms, so the parse itself is cheap and most
