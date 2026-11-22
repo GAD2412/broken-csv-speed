@@ -22,7 +22,14 @@ for (const name of readdirSync(root).sort()) {
   const want = JSON.stringify(JSON.parse(readFileSync(join(dir, 'reference/expected.json'), 'utf8')).cases.map((c) => c.output));
   const got = r.status === 0 ? readFileSync(join(out, 'answers.json'), 'utf8') : `exit ${r.status}: ${r.stderr}`;
   n++;
-  if (got !== want) {
+  let same = got === want;
+  if (!same) {
+    // Not the same bytes (fast.cjs pads with JSON whitespace): the same JSON value? (Key order kept, so stringify.)
+    try {
+      same = JSON.stringify(JSON.parse(got)) === want;
+    } catch {}
+  }
+  if (!same) {
     bad++;
     console.log(`${name}: DIFFERENT (${got.length} vs ${want.length} bytes) ${r.stderr.slice(0, 300)}`);
   }

@@ -80,6 +80,27 @@ searches 3.8 ms, the six answers 16.8 ms (about 1.5 ns a byte).
 
 `--single-threaded-gc` set at run time can abort V8 (concurrent marking already started); dropped.
 
+Server v4 = 110 ms (from 560).
+
+v5: no `","header":` search. The text is read up to the raw quote that ends it; the header flag only changes the
+answer's first bytes, the separator after the first record and the errors' row numbers, so those are written as
+fixed-size placeholders (padded with JSON whitespace: the output is the same JSON value, no longer the same bytes as
+JSON.stringify) and errors kept as numbers until the flag is read; a placeholder already written out is patched in
+the file with a positioned write.
+
+v6: the input goes through a 512 KiB window too, refilled before a record when under 64 KiB are left (a record or
+an unterminated quote's tail longer than that gives up to run()). Output window 512 KiB.
+
+| version | instructions | faults | RSS | CPU net |
+|---|---|---|---|---|
+| empty CJS main.ts | 536 M | 5.28 k | 61.4 MB | - |
+| v4 | 974 M | 6.25 k | 76.7 MB | 56 ms |
+| v6 | 969 M | 5.54 k | 65.8 MB | 51 ms |
+
+Fixed cost of v6 (a tiny input): 42 M instructions over the empty CJS main.ts; per input byte about 35
+instructions. The bare copy loop alone in asm.js runs at 1.1-1.2 ns a byte (bounds-checked heap accesses);
+unrolled by 4, 0.93-0.98.
+
 Phase split of v1 in one process: read 13 ms, JSON.parse 12, run (6 cases) 95, JSON.stringify 23, UTF-8 encode 8.
 Floor for the run phase (only slicing every field, wrong answers): about 80 ms, so the parse itself is cheap and most
 of the cost is allocating 1.1 M field strings and the GC that promotes them. An empty main.ts costs about 22 ms more

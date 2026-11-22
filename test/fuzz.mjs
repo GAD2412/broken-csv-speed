@@ -14,9 +14,9 @@ import { run } from '../solve.js';
 // gives up (main.ts then answers with run()).
 const { fastPath } = createRequire(import.meta.url)('../fast.cjs');
 const work = mkdtempSync(join(tmpdir(), 'fuzz-'));
-function transduce(bytes, window) {
+function transduce(bytes, windows = []) {
   writeFileSync(join(work, 'cases.json'), bytes);
-  if (!fastPath(join(work, 'cases.json'), join(work, 'answers.json'), window)) {
+  if (!fastPath(join(work, 'cases.json'), join(work, 'answers.json'), ...windows)) {
     if (existsSync(join(work, 'answers.json'))) throw new Error('a partial answers.json was left behind');
     return null;
   }
@@ -199,8 +199,9 @@ function checkBatch(batch, label, noncanonical) {
   const bytes = Buffer.from(json, 'utf8');
   const handed = JSON.parse(bytes.toString('utf8'));
   const want = JSON.stringify(handed.map((c) => readCsv(c.input)));
-  // A 4 KiB window: the window is written out between records all the time; a record too big for it gives up.
-  const small = transduce(bytes, 4096);
+  // Small windows (4 KiB out; 1 KiB in, refilled when under 256 bytes are left): both are written out or refilled
+  // between records all the time; a record, or the tail of a quote that never closes, too big for them gives up.
+  const small = transduce(bytes, [4096, 1024, 256]);
   if (small === null) tstats.smallGaveUp++;
   else {
     tstats.small++;
@@ -254,5 +255,5 @@ for (let i = 0; i < total; i++) {
 
 console.log(`${exhaustive.length + specials.length + total} cases, ${fails} mismatches`);
 console.log(`transducer: ${tstats.bytes} batches byte-identical, ${tstats.value} value-identical, ${tstats.gaveUp} gave up (${tstats.gaveUpCanonical} on canonical boolean-header input)`);
-console.log(`4 KiB window: ${tstats.small} batches identical, ${tstats.smallGaveUp} gave up`);
+console.log(`small windows: ${tstats.small} batches identical, ${tstats.smallGaveUp} gave up`);
 process.exit(fails === 0 ? 0 : 1);
