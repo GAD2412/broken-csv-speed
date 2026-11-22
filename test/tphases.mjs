@@ -16,8 +16,10 @@ const lap = (name) => {
   t = now;
 };
 console.log(`startup     ${t.toFixed(1)} ms`);
-const { transduce } = await import('../transduce.js');
+const { transduce, warm } = await import('../transduce.js');
 lap('import');
+if (process.env.WARM !== '0') warm();
+lap('warm');
 const bytes = readFileSync(process.argv[2] + '/input/cases.json');
 lap('read');
 const out = transduce(bytes);

@@ -7,14 +7,18 @@
 A dependency-free JavaScript reader of broken CSV text that returns exactly csv-reader 1.0.0's answer
 (`{columns, rows, errors}`: short and long rows, stray CRs, junk after quotes, unterminated quotes) in less CPU time.
 
-- `transduce.js` (the fast path `main.ts` takes) never decodes the CSV into JS strings: it reads the bytes of
-  `cases.json` and writes the bytes of `answers.json`. In the JSON text every character the CSV reading looks at is
-  ASCII and appears as `,` or as the escapes `\"`, `\n`, `\r`; everything else is opaque and copied through, since JSON
-  escapes one character at a time. Quote doubling, CR to LF inside quotes, stray CRs, junk, unterminated quotes and
-  ragged rows are all handled on the escaped bytes. Files of any other shape make it give up.
+- `fast.cjs` (the fast path; `main.ts` is one line that calls it) never decodes the CSV into JS strings: it reads the
+  bytes of `cases.json` and writes the bytes of `answers.json`. In the JSON text every character the CSV reading looks
+  at is ASCII and appears as `,` or as the escapes `\"`, `\n`, `\r`; everything else is opaque and copied through,
+  since JSON escapes one character at a time. Quote doubling, CR to LF inside quotes, stray CRs, junk, unterminated
+  quotes and ragged rows are all handled on the escaped bytes.
+- That reader is written in the asm.js subset of JavaScript, so V8 validates it and compiles it ahead of time to
+  machine code: no time is spent warming up a JIT, which for a JS loop over 11 MB run once costs more than the loop.
+  The input is read whole into the asm heap with one read; the output goes through a 1 MiB window written out between
+  records, so few memory pages are touched.
 - `solve.js` exports `run(input)`, the same reading on JS strings (one pass with `charCodeAt`, fields as slices of the
-  text), used for every case whenever the transducer gives up.
-- `main.ts` is the harness program; it also turns off V8's GC helper threads, which only cost CPU on one core.
+  text). Whenever the file is not of the expected shape (other keys, a header that is not a boolean, `\u` escapes of a
+  comma, quote, CR or LF, a record bigger than the window) every case is answered with `run()` instead.
 The exact reading rules are in [NOTES.md](NOTES.md); `test/fuzz.mjs` checks the answers against the reference on
 hundreds of thousands of random and adversarial inputs.
 

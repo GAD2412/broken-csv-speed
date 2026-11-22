@@ -62,6 +62,23 @@ are byte-level transducers at 0-30 ms).
 
 v3 phases locally: process start with TypeScript stripping 22 ms, read 1 ms, transduce 67 ms (a warm second call
 takes 30 ms: the cold call pays for JIT tiering and deopts on branches with no feedback yet), write 1.5 ms.
+A warm-up input that takes every branch removes the deopts but not the tiering cost; bigger warm-ups cost more than
+they save. V8 tiering flags set at run time change nothing measurable.
+
+Server v3 = 560 ms against 98 ms locally: under gVisor what costs is memory touched (page faults), syscalls and
+thread wake-ups, so `/usr/bin/time -l` (instructions retired, page reclaims, RSS) is the local proxy now:
+
+| program | instructions | faults (16 KiB pages) | RSS |
+|---|---|---|---|
+| empty .ts | 514 M | 5.2 k | 61 MB |
+| empty .mjs | 301 M | 3.8 k | 39 MB |
+| v3 (JS transducer) | 2262 M | 7.5 k | 97 MB |
+| v4 (asm.js transducer, 1 MiB output window, CJS main.ts) | 968 M | 6.2 k | 77 MB |
+
+v4: 51 ms net locally (v3 96 ms). Inside its fast path: read 1.1 ms, asm compile 1.5 ms, the six `","header":`
+searches 3.8 ms, the six answers 16.8 ms (about 1.5 ns a byte).
+
+`--single-threaded-gc` set at run time can abort V8 (concurrent marking already started); dropped.
 
 Phase split of v1 in one process: read 13 ms, JSON.parse 12, run (6 cases) 95, JSON.stringify 23, UTF-8 encode 8.
 Floor for the run phase (only slicing every field, wrong answers): about 80 ms, so the parse itself is cheap and most

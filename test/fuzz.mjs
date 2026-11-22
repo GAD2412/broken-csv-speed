@@ -4,8 +4,24 @@
 //   node test/fuzz.mjs <path to csv-reader index.js> [cases=200000] [seed=1]
 
 import { pathToFileURL } from 'node:url';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { run } from '../solve.js';
-import { transduce } from '../transduce.js';
+
+// The fast path main.ts takes, run on a cases.json file as main.ts runs it: the answers.json bytes, or null when it
+// gives up (main.ts then answers with run()).
+const { fastPath } = createRequire(import.meta.url)('../fast.cjs');
+const work = mkdtempSync(join(tmpdir(), 'fuzz-'));
+function transduce(bytes, window) {
+  writeFileSync(join(work, 'cases.json'), bytes);
+  if (!fastPath(join(work, 'cases.json'), join(work, 'answers.json'), window)) {
+    if (existsSync(join(work, 'answers.json'))) throw new Error('a partial answers.json was left behind');
+    return null;
+  }
+  return readFileSync(join(work, 'answers.json'));
+}
 
 const refPath = process.argv[2];
 if (!refPath) {
@@ -157,7 +173,7 @@ function escapeSome(json) {
 }
 
 let fails = 0;
-const tstats = { bytes: 0, value: 0, gaveUp: 0, gaveUpCanonical: 0 };
+const tstats = { bytes: 0, value: 0, gaveUp: 0, gaveUpCanonical: 0, small: 0, smallGaveUp: 0 };
 function report(label, input, want, got) {
   fails++;
   if (fails <= 5) {
@@ -183,6 +199,20 @@ function checkBatch(batch, label, noncanonical) {
   const bytes = Buffer.from(json, 'utf8');
   const handed = JSON.parse(bytes.toString('utf8'));
   const want = JSON.stringify(handed.map((c) => readCsv(c.input)));
+  // A 4 KiB window: the window is written out between records all the time; a record too big for it gives up.
+  const small = transduce(bytes, 4096);
+  if (small === null) tstats.smallGaveUp++;
+  else {
+    tstats.small++;
+    const text = Buffer.from(small).toString('utf8');
+    let same = text === want;
+    if (!same) {
+      try {
+        same = canonical(JSON.parse(text)) === canonical(JSON.parse(want));
+      } catch {}
+    }
+    if (!same) report(`${label} small window`, batch, want, text);
+  }
   const got = transduce(bytes);
   if (got === null) {
     tstats.gaveUp++;
@@ -224,4 +254,5 @@ for (let i = 0; i < total; i++) {
 
 console.log(`${exhaustive.length + specials.length + total} cases, ${fails} mismatches`);
 console.log(`transducer: ${tstats.bytes} batches byte-identical, ${tstats.value} value-identical, ${tstats.gaveUp} gave up (${tstats.gaveUpCanonical} on canonical boolean-header input)`);
+console.log(`4 KiB window: ${tstats.small} batches identical, ${tstats.smallGaveUp} gave up`);
 process.exit(fails === 0 ? 0 : 1);
