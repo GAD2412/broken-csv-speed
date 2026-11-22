@@ -77,27 +77,31 @@ function build(L) {
     funcs.push({ name, params: params.map((n) => [n, I32]), result, locals, body, export: exp });
   const i32s = (...names) => names.map((n) => [n, I32]);
 
-  // The r (1 to 8) bytes at src, plain bytes and commas (m: the commas' bits), written at o with each comma as
-  // `","`. One shuffle when they fit 16 bytes (at most 4 commas); else byte by byte.
-  fn('expand', ['src', 'r', 'm'], null, i32s('j', 'b', 'k'), [
-    If(le(popcnt(get('m')), c(4)), [
-      vst(gget('o'), vswizzle(vor(vand(vld(get('src')), LOW8), Q8), vld(shl(get('m'), c(4)), L.TBL))),
-      gset('o', add(gget('o'), add(get('r'), shl(popcnt(get('m')), c(1))))),
-      Ret(),
+  // The r (1 to 8) bytes at src, plain bytes and commas (m: the commas' bits), written at k with each comma as
+  // `","`, k moved past them. One shuffle when they fit 16 bytes (at most 4 commas); else byte by byte. Written
+  // into the caller (a call costs a spill of every local in the baseline compiler); uses its locals k, xs, xr, xm,
+  // xj, xb.
+  const expand = (src, r, m) => [
+    set('xs', src),
+    set('xr', r),
+    set('xm', m),
+    If(le(popcnt(get('xm')), c(4)), [
+      vst(get('k'), vswizzle(vor(vand(vld(get('xs')), LOW8), Q8), vld(shl(get('xm'), c(4)), L.TBL))),
+      set('k', add(get('k'), add(get('xr'), shl(popcnt(get('xm')), c(1))))),
+    ], [
+      set('xj', c(0)),
+      While('J', lt(get('xj'), get('xr')), [
+        set('xb', ld8(add(get('xs'), get('xj')))),
+        If(eq(get('xb'), c(44)), [
+          st8(get('k'), c(34)),
+          st8(get('k'), c(44), 1),
+          st8(get('k'), c(34), 2),
+          inc('k', 3),
+        ], [st8(get('k'), get('xb')), inc('k')]),
+        inc('xj'),
+      ]),
     ]),
-    set('k', gget('o')),
-    While('J', lt(get('j'), get('r')), [
-      set('b', ld8(add(get('src'), get('j')))),
-      If(eq(get('b'), c(44)), [
-        st8(get('k'), c(34)),
-        st8(get('k'), c(44), 1),
-        st8(get('k'), c(34), 2),
-        inc('k', 3),
-      ], [st8(get('k'), get('b')), inc('k')]),
-      inc('j'),
-    ]),
-    gset('o', get('k')),
-  ]);
+  ];
 
   // cp(dst, src, len): dst + len.
   fn('cp', ['dst', 'src', 'len'], I32, [], [mcopy(get('dst'), get('src'), get('len')), Ret(add(get('dst'), get('len')))]);
@@ -366,7 +370,8 @@ function build(L) {
 
   // Reads the text that starts at ts up to its closing quote, writing its records: 0, or -1 to give up.
   fn('answer', ['ts'], I32, [...i32s('recStart', 'count', 'width', 'inX', 'oRow', 'xStart', 'xEnd', 'lastQ',
-    'lastStart', 'f', 'ch', 'n', 'i', 'k', 'b', 'lim', 'fs', 'mc', 's', 'pm', 'nc'), ['v', V128]], [
+    'lastStart', 'f', 'ch', 'n', 'i', 'k', 'b', 'lim', 'fs', 's', 'pm', 'nc', 'tl', 'xs', 'xr', 'xm', 'xj', 'xb'),
+    ['v', V128]], [
     set('width', c(-1)),
     gset('te', gget('inEnd')),
     gset('teFound', c(0)),
@@ -434,27 +439,31 @@ function build(L) {
           // Most of a row: plain fields. 16 bytes at a time: the bytes up to the first backslash, raw quote or
           // control byte, with every comma among them written as `","` (each one ends a field), as long as no
           // comma there starts a long row's cut fields. fs: where the content of the field now read starts.
+          // (i, k: input and output positions, kept in locals here; tl: the last block start in the text.)
           set('fs', gget('o')),
+          set('i', gget('p')),
+          set('k', gget('o')),
+          set('tl', sub(gget('te'), c(16))),
           Forever('V', [
-            set('i', gget('p')),
-            If(gt(add(get('i'), c(16)), gget('te')), [Break('V')]),
-            If(gt(gget('o'), c(L.OUTEND - 1024 - 64)), [Break('V')]),
+            If(gt(get('i'), get('tl')), [Break('V')]),
+            If(gt(get('k'), c(L.OUTEND - 1024 - 64)), [Break('V')]),
             set('v', vld(get('i'))),
-            set('mc', commas(get('v'))),
             set('s', ctz(or(specials(get('v')), c(0x10000)))),
             If(eqz(get('s')), [Break('V')]),
-            set('pm', and(get('mc'), sub(shl(c(1), get('s')), c(1)))),
+            set('pm', and(commas(get('v')), sub(shl(c(1), get('s')), c(1)))),
             set('nc', popcnt(get('pm'))),
             If(and(ge(get('width'), c(0)), ge(add(get('count'), get('nc')), get('width'))), [Break('V')]),
-            call('expand', get('i'), select(get('s'), c(8), lt(get('s'), c(8))), and(get('pm'), c(0xff))),
-            If(gt(get('s'), c(8)), [call('expand', add(get('i'), c(8)), sub(get('s'), c(8)), shrU(get('pm'), c(8)))]),
+            ...expand(get('i'), select(get('s'), c(8), lt(get('s'), c(8))), and(get('pm'), c(0xff))),
+            If(gt(get('s'), c(8)), expand(add(get('i'), c(8)), sub(get('s'), c(8)), shrU(get('pm'), c(8)))),
             If(get('nc'), [
               set('count', add(get('count'), get('nc'))),
-              set('fs', sub(gget('o'), sub(get('s'), sub(c(32), clz(get('pm')))))),
+              set('fs', sub(get('k'), sub(get('s'), sub(c(32), clz(get('pm')))))),
             ]),
-            gset('p', add(get('i'), get('s'))),
+            set('i', add(get('i'), get('s'))),
             If(lt(get('s'), c(16)), [Break('V')]),
           ]),
+          gset('p', get('i')),
+          gset('o', get('k')),
         ]),
         If(and(eqz(get('lastQ')), all(eq(gget('o'), get('fs')), eq(ld8(gget('p')), c(92)), eq(at(gget('p'), 1), c(34)))), [
           // A comma just read starts a quoted field.
@@ -478,7 +487,21 @@ function build(L) {
           If(all(lt(get('i'), get('lim')), eq(ld8(get('i')), c(44))), [
             gset('p', add(get('i'), c(1))),
             gset('ended', c(0)),
-          ], [call('unq')]),
+          ], [
+            // The end of a row (\n or \r\n) here too; anything else goes on in unq().
+            If(all(lt(get('i'), get('lim')), eq(ld8(get('i')), c(92)), eq(at(get('i'), 1), c(110))), [
+              gset('p', add(get('i'), c(2))),
+              ginc('line'),
+              gset('ended', c(1)),
+            ], [
+              If(all(lt(get('i'), get('lim')), eq(ld8(get('i')), c(92)), eq(at(get('i'), 1), c(114)),
+                eq(at(get('i'), 2), c(92)), eq(at(get('i'), 3), c(110))), [
+                gset('p', add(get('i'), c(4))),
+                ginc('line'),
+                gset('ended', c(1)),
+              ], [call('unq')]),
+            ]),
+          ]),
         ])]),
         If(gget('fail'), [Ret(c(-1))]),
         st8(gget('o'), c(34)),

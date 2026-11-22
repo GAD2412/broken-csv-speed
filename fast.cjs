@@ -24,10 +24,11 @@ const v8 = require('node:v8');
 // The house baseline's flag. (--single-threaded-gc set at run time can abort V8 when concurrent marking already ran,
 // and this path hardly touches the JS heap, so it is left alone.)
 v8.setFlagsFromString('--no-incremental-marking');
-// Compile the module on this thread, not on helper threads, and with the baseline compiler only: on one CPU, a
-// background optimising recompile of the hot functions costs about what it saves.
+// Compile the module once, before it runs, on this thread and with the optimising compiler: no baseline tier, no
+// background recompile of the hot functions (which on one CPU competes with the run).
 v8.setFlagsFromString('--wasm-num-compilation-tasks=0');
-v8.setFlagsFromString('--liftoff-only');
+v8.setFlagsFromString('--no-liftoff');
+v8.setFlagsFromString('--no-wasm-lazy-compilation');
 
 const { build, expansionTable } = require('./reader.cjs');
 
