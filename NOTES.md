@@ -46,4 +46,17 @@ So almost every line is plain: no quote, no CR other than the CRLF ending. That 
 
 ## Measurements
 
-(filled in as I measure: change -> CPU time vs the baseline on the same machine)
+Local machine (Apple Silicon, Node 22.22, no CPU pinning, so +-10 ms noise). `test/bench.mjs`, CPU net of a
+null `node -e 0`, mean of a set of 6 cases (about 11 MB of CSV):
+
+| version | change | CPU ms |
+|---|---|---|
+| house baseline | csv-reader 1.0.0 | 488 |
+| v1 | charCodeAt pass, slices | 187-198 |
+| v2 | clean-line fast path (cached indexOf of quote / CR), native split | 184-206 (noise) |
+| v2 + flags | main.ts: --single-threaded-gc, --no-concurrent-recompilation | 183-195 |
+
+Phase split of v1 in one process: read 13 ms, JSON.parse 12, run (6 cases) 95, JSON.stringify 23, UTF-8 encode 8.
+Floor for the run phase (only slicing every field, wrong answers): about 80 ms, so the parse itself is cheap and most
+of the cost is allocating 1.1 M field strings and the GC that promotes them. An empty main.ts costs about 22 ms more
+CPU than an empty .mjs (TypeScript stripping), the same for every entry.

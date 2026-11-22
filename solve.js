@@ -160,6 +160,10 @@ export function run(input) {
   let columns = null;
   let width = -1;
   const n = len;
+  // The first quote and the first CR at or after pos (n when none): found with indexOf and kept until pos passes them,
+  // so a line can be told clean (no quote, no CR but its CRLF ending) without looking at its characters one by one.
+  let nextQuote = -1;
+  let nextCR = -1;
 
   for (;;) {
     // Blank lines (LF or CRLF) are no records.
@@ -179,15 +183,41 @@ export function run(input) {
 
     recLine = line;
     recRow = header && columns === null ? null : rows.length;
-    const fields = [];
-    let quoted = false;
-    do {
-      quoted = text.charCodeAt(pos) === QUOTE;
-      fields.push(quoted ? readQuoted() : readUnquoted(''));
-    } while (ended === AT_COMMA);
+    let fields;
 
-    // A line of stray CRs alone leaves nothing: no record.
-    if (fields.length === 1 && !quoted && fields[0] === '') continue;
+    if (nextQuote < pos) {
+      nextQuote = text.indexOf('"', pos);
+      if (nextQuote < 0) nextQuote = n;
+    }
+    if (nextCR < pos) {
+      nextCR = text.indexOf('\r', pos);
+      if (nextCR < 0) nextCR = n;
+    }
+    const nl = text.indexOf('\n', pos);
+    const lineEnd = nl < 0 ? n : nl;
+    // The record's last character: before the CR of a CRLF ending.
+    const end = nl > 0 && text.charCodeAt(nl - 1) === CR ? nl - 1 : lineEnd;
+
+    if (nextQuote >= lineEnd && nextCR >= end) {
+      // Clean line: unquoted fields split at commas (native split), never empty (blank lines were skipped).
+      fields = text.slice(pos, end).split(',');
+      if (nl < 0) {
+        pos = n;
+      } else {
+        pos = nl + 1;
+        line++;
+      }
+    } else {
+      fields = [];
+      let quoted = false;
+      do {
+        quoted = text.charCodeAt(pos) === QUOTE;
+        fields.push(quoted ? readQuoted() : readUnquoted(''));
+      } while (ended === AT_COMMA);
+
+      // A line of stray CRs alone leaves nothing: no record.
+      if (fields.length === 1 && !quoted && fields[0] === '') continue;
+    }
 
     if (width < 0) width = fields.length;
     if (header && columns === null) {

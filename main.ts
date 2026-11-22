@@ -7,7 +7,11 @@ import { join } from 'node:path';
 import { setFlagsFromString } from 'node:v8';
 
 // Flags first, so all of solve.js runs under them (the house baseline runs with incremental marking off).
+// On one CPU, helper threads for scavenging and for optimising compiles only add switching and synchronisation:
+// do that work on the main thread instead.
 setFlagsFromString('--no-incremental-marking');
+setFlagsFromString('--single-threaded-gc');
+setFlagsFromString('--no-concurrent-recompilation');
 
 const { run } = (await import(new URL('./solve.js', import.meta.url).href)) as { run: (input: unknown) => unknown };
 
