@@ -12,8 +12,9 @@ A dependency-free JavaScript reader of broken CSV text that returns exactly csv-
   at is ASCII and appears as `,` or as the escapes `\"`, `\n`, `\r`; everything else is opaque and copied through,
   since JSON escapes one character at a time. Quote doubling, CR to LF inside quotes, stray CRs, junk, unterminated
   quotes and ragged rows are all handled on the escaped bytes.
-- That reader is a WebAssembly module (`reader.cjs`), assembled at run time by a small assembler written here
-  (`wasm.cjs`) and compiled ahead of its run, so no time goes into warming up a JIT (for a JS loop over 11 MB run
+- That reader is a WebAssembly module, written in `fast.cjs` as a program in a small JSON notation and turned into
+  module bytes at run time by one emitter function, then compiled ahead of its run (Liftoff only), so no time goes
+  into warming up a JIT (for a JS loop over 11 MB run
   once that costs more than the loop). Plain fields are read 16 bytes at a time with SIMD: one comparison finds the
   commas and the bytes that need care, and the commas before the first escape are all written as `","` at once, by a
   table-driven byte shuffle. Quoted fields are copied 16 bytes at a time up to their next escape.

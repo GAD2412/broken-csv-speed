@@ -120,6 +120,26 @@ same cycles (253-257 M). An x86 server (cheap bitmask) should favour it; the dev
 | v6 + inline plain path (asm.js) | 911 M | 253 M | 47.6 ms |
 | v7 wasm SIMD, Liftoff only | 831 M | 257 M | 58.7 ms (background threads on E-cores?) |
 
+Server: v7 (wasm SIMD, Liftoff only) = 70 ms (interval 20-70); v7 with an optimising compile of the module
+(--no-liftoff, eager) = 100 ms (interval 100-110). An optimising compile costs about 3.5 ms here and some 30 ms there:
+what looks like start-up work (compiling, building, fresh memory) weighs several times more on the grader.
+
+Start-up costs, measured as whole processes with /usr/bin/time (16 KiB pages):
+
+| step | faults | instructions |
+|---|---|---|
+| main.ts with no code | 5.10 k | 511 M |
+| + one require of an empty .cjs | +25 | +19 M |
+| + a second require of an empty .cjs | +240 | +4 M |
+| + node:v8 | +75 | +7 M |
+| 10 KB of code in main.ts itself (TypeScript stripping) | +380 | +123 M |
+
+So main.ts stays one line and requires one file; v8: assembler, reader and driver all live in fast.cjs. The reader
+is written as a JSON program (JSON.parse is native and cheap) walked by one emitter function writing into one byte
+buffer: the module's bytes are checked identical to the earlier closure-built ones. Fixed cost on a tiny input: 607 M
+instructions and 5.56 k faults before, 578 M and 5.46 k now; on a real set 756 M instructions, 5.53 k faults.
+Window sizes 256 KiB to 1 MiB make no clear difference (fewer faults against more syscalls).
+
 Phase split of v1 in one process: read 13 ms, JSON.parse 12, run (6 cases) 95, JSON.stringify 23, UTF-8 encode 8.
 Floor for the run phase (only slicing every field, wrong answers): about 80 ms, so the parse itself is cheap and most
 of the cost is allocating 1.1 M field strings and the GC that promotes them. An empty main.ts costs about 22 ms more
