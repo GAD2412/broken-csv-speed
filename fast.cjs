@@ -493,6 +493,10 @@ function Csv(stdlib, foreign, heap) {
     var f = 0;
     var c = 0;
     var n = 0;
+    var i = 0;
+    var k = 0;
+    var b = 0;
+    var lim = 0;
     te = inEnd;
     teFound = 0;
     p = ts;
@@ -565,8 +569,30 @@ function Csv(stdlib, foreign, heap) {
         o = (o + 1) | 0;
         lastStart = o;
         lastQ = ((H[p] | 0) == 92) & ((H[(p + 1) | 0] | 0) == 34);
-        if ((lastQ | 0) != 0) quo();
-        else unq();
+        if ((lastQ | 0) != 0) {
+          quo();
+        } else {
+          // Most fields: plain bytes, then a comma. Copied here; anything else goes on in unq().
+          i = p;
+          k = o;
+          lim = (i + ((oMax - k) | 0)) | 0;
+          if ((lim | 0) > (te | 0)) lim = te;
+          while ((i | 0) < (lim | 0)) {
+            b = H[i] | 0;
+            if ((H[(STOP + b) | 0] | 0) != 0) break;
+            H[k] = b;
+            k = (k + 1) | 0;
+            i = (i + 1) | 0;
+          }
+          o = k;
+          p = i;
+          if ((((i | 0) < (lim | 0)) & ((H[i] | 0) == 44)) != 0) {
+            p = (i + 1) | 0;
+            ended = 0;
+          } else {
+            unq();
+          }
+        }
         if ((fail | 0) != 0) return -1;
         H[o] = 34;
         o = (o + 1) | 0;
