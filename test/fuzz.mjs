@@ -120,12 +120,40 @@ function longCase() {
   return s;
 }
 
+// Wide rows (up to 30 fields, runs of empty fields, quoted fields right after commas, ragged widths): long lines
+// whose commas and escapes fall at every offset of the 8- and 16-byte blocks the fast path reads.
+function wide() {
+  const eol = pick(['\n', '\r\n']);
+  const width = int(1, 30);
+  const recs = int(1, 25);
+  let s = chance(0.2) ? '﻿' : '';
+  for (let r = 0; r < recs; r++) {
+    const w = chance(0.8) ? width : int(1, width + 4);
+    const parts = [];
+    for (let f = 0; f < w; f++) {
+      const k = int(0, 19);
+      if (k < 6) parts.push('');
+      else if (k < 13) parts.push('abcdefghijklmnopqrstuvwxyz0123456789-é東'.slice(int(0, 20), int(20, 40)));
+      else if (k < 16) parts.push(`"${pick(WORDS).replaceAll('"', '""')}${pick(['', '""', '\r\n', ',', ''])}"`);
+      else if (k < 17) parts.push(`"x"${pick(JUNK)}`);
+      else if (k < 18) parts.push('p\rq');
+      else parts.push(String(int(0, 1e9)));
+    }
+    s += parts.join(',') + (r < recs - 1 || chance(0.7) ? eol : '');
+  }
+  if (chance(0.1)) {
+    const at = int(0, s.length);
+    s = s.slice(0, at) + '"' + s.slice(at).replaceAll('"', '');
+  }
+  return s;
+}
+
 function makeInput(i) {
   const m = i % 10;
   let text;
-  if (m < 3) text = chaos(int(0, 40));
+  if (m < 3) text = i % 3 === 0 ? wide() : chaos(int(0, 40));
   else if (m < 7) text = structured();
-  else if (m < 9) text = mutate(structured());
+  else if (m < 9) text = mutate(i % 2 ? structured() : wide());
   else text = i % 100 === 9 ? longCase() : chaos(int(0, 200));
   const hv = int(0, 9);
   const header = hv < 5 ? true : hv < 9 ? false : pick([1, 'true', null, undefined]);

@@ -12,10 +12,14 @@ A dependency-free JavaScript reader of broken CSV text that returns exactly csv-
   at is ASCII and appears as `,` or as the escapes `\"`, `\n`, `\r`; everything else is opaque and copied through,
   since JSON escapes one character at a time. Quote doubling, CR to LF inside quotes, stray CRs, junk, unterminated
   quotes and ragged rows are all handled on the escaped bytes.
-- That reader is written in the asm.js subset of JavaScript, so V8 validates it and compiles it ahead of time to
-  machine code: no time is spent warming up a JIT, which for a JS loop over 11 MB run once costs more than the loop.
-  The input is read whole into the asm heap with one read; the output goes through a 1 MiB window written out between
-  records, so few memory pages are touched.
+- That reader is a WebAssembly module (`reader.cjs`), assembled at run time by a small assembler written here
+  (`wasm.cjs`) and compiled ahead of its run, so no time goes into warming up a JIT (for a JS loop over 11 MB run
+  once that costs more than the loop). Plain fields are read 16 bytes at a time with SIMD: one comparison finds the
+  commas and the bytes that need care, and the commas before the first escape are all written as `","` at once, by a
+  table-driven byte shuffle. Quoted fields are copied 16 bytes at a time up to their next escape.
+- Input and output go through 512 KiB windows (refilled and written out between records), so few memory pages are
+  touched. The header flag comes after the text in the file, so the answer's first bytes are written as
+  placeholders (padded with JSON whitespace) and filled in once the flag is read.
 - `solve.js` exports `run(input)`, the same reading on JS strings (one pass with `charCodeAt`, fields as slices of the
   text). Whenever the file is not of the expected shape (other keys, a header that is not a boolean, `\u` escapes of a
   comma, quote, CR or LF, a record bigger than the window) every case is answered with `run()` instead.

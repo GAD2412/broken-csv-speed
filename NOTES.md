@@ -101,6 +101,25 @@ Fixed cost of v6 (a tiny input): 42 M instructions over the empty CJS main.ts; p
 instructions. The bare copy loop alone in asm.js runs at 1.1-1.2 ns a byte (bounds-checked heap accesses);
 unrolled by 4, 0.93-0.98.
 
+Server v6 = 110 ms as well (interval 50-120): windowing the input changed nothing measurable there.
+
+A symbolic link main.ts -> fast.cjs would skip TypeScript stripping (305 M instructions for the whole process
+instead of 536 M), but the grader does not take a link as the entrypoint ("the snapshot has no main.ts").
+
+Micro-benchmarks (ns a byte, copy-until-special over real cases.json bytes, this ARM machine): asm.js 1.13,
+asm.js unrolled 0.95, wasm scalar 0.87 (TurboFan) / 1.40 (Liftoff), wasm SIMD 16-byte 1.11 (both tiers: i8x16.bitmask
+is several instructions on ARM, one on x86), wasm SWAR 8-byte 0.77-0.87.
+
+v7: the reader as a WebAssembly module (reader.cjs) written with a small assembler (wasm.cjs), SIMD for plain and
+quoted fields, Liftoff only. Inside the run: answers 13.8 ms against 17.1 for asm.js, but assembling the module
+(2.4 ms, cold JS) and the tables eat most of that back; whole process here: 815 M instructions against 911 M, the
+same cycles (253-257 M). An x86 server (cheap bitmask) should favour it; the dev timing decides.
+
+| version | instructions | cycles | CPU net (bench) |
+|---|---|---|---|
+| v6 + inline plain path (asm.js) | 911 M | 253 M | 47.6 ms |
+| v7 wasm SIMD, Liftoff only | 831 M | 257 M | 58.7 ms (background threads on E-cores?) |
+
 Phase split of v1 in one process: read 13 ms, JSON.parse 12, run (6 cases) 95, JSON.stringify 23, UTF-8 encode 8.
 Floor for the run phase (only slicing every field, wrong answers): about 80 ms, so the parse itself is cheap and most
 of the cost is allocating 1.1 M field strings and the GC that promotes them. An empty main.ts costs about 22 ms more
