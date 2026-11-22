@@ -452,6 +452,22 @@ function build(L) {
             If(eqz(get('s')), [Break('V')]),
             set('pm', and(commas(get('v')), sub(shl(c(1), get('s')), c(1)))),
             set('nc', popcnt(get('pm'))),
+            // The common block: 16 plain bytes and commas, at most 4 commas in each half, no long-row boundary.
+            If(all(eq(get('s'), c(16)), le(popcnt(and(get('pm'), c(0xff))), c(4)), le(popcnt(shrU(get('pm'), c(8))), c(4)),
+              or(lt(get('width'), c(0)), lt(add(get('count'), get('nc')), get('width')))), [
+              set('xm', and(get('pm'), c(0xff))),
+              vst(get('k'), vswizzle(vor(vand(get('v'), LOW8), Q8), vld(shl(get('xm'), c(4)), L.TBL))),
+              set('k', add(get('k'), add(c(8), shl(popcnt(get('xm')), c(1))))),
+              set('xm', shrU(get('pm'), c(8))),
+              vst(get('k'), vswizzle(vor(vand(vld(get('i'), 8), LOW8), Q8), vld(shl(get('xm'), c(4)), L.TBL))),
+              set('k', add(get('k'), add(c(8), shl(popcnt(get('xm')), c(1))))),
+              If(get('nc'), [
+                set('count', add(get('count'), get('nc'))),
+                set('fs', sub(get('k'), sub(c(16), sub(c(32), clz(get('pm')))))),
+              ]),
+              inc('i', 16),
+              Continue('V'),
+            ]),
             If(and(ge(get('width'), c(0)), ge(add(get('count'), get('nc')), get('width'))), [Break('V')]),
             ...expand(get('i'), select(get('s'), c(8), lt(get('s'), c(8))), and(get('pm'), c(0xff))),
             If(gt(get('s'), c(8)), expand(add(get('i'), c(8)), sub(get('s'), c(8)), shrU(get('pm'), c(8)))),

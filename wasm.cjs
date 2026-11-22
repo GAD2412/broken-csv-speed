@@ -70,14 +70,18 @@ const gset = (n, e) => (cx, out) => {
 const c = (v) => [0x41, ...sleb(v)];
 const vconst = (bytes16) => [0xfd, 0x0c, ...bytes16];
 
+// (Indexed loops throughout: this runs once, cold, in the interpreter, where for...of costs.)
+const pushAll = (out, bytes) => {
+  for (let i = 0; i < bytes.length; i++) out.push(bytes[i]);
+};
 const op1 = (...code) => (a) => (cx, out) => {
   emit(a, cx, out);
-  for (const b of code) out.push(b);
+  pushAll(out, code);
 };
 const op2 = (...code) => (a, b) => (cx, out) => {
   emit(a, cx, out);
   emit(b, cx, out);
-  for (const x of code) out.push(x);
+  pushAll(out, code);
 };
 
 // i32
@@ -112,14 +116,14 @@ const select = (a, b, cond) => (cx, out) => {
 // Memory (unaligned accesses are fine in wasm: the alignment hint is 0 everywhere).
 const mem = (opcode) => (a, off = 0) => (cx, out) => {
   emit(a, cx, out);
-  for (const b of opcode) out.push(b);
+  pushAll(out, opcode);
   out.push(0);
   uleb(off, out);
 };
 const memSt = (opcode) => (a, v, off = 0) => (cx, out) => {
   emit(a, cx, out);
   emit(v, cx, out);
-  for (const b of opcode) out.push(b);
+  pushAll(out, opcode);
   out.push(0);
   uleb(off, out);
 };
@@ -230,12 +234,12 @@ function assemble(spec) {
   const globals = spec.globals.map(([, v]) => [I32, 0x01, ...c(v), 0x0b]);
   const exports = spec.funcs.filter((f) => f.export).map((f) => [...str(f.name), 0x00, ...uleb(funcIndex.get(f.name))]);
   const codes = spec.funcs.map((f) => {
-    const names = [...f.params, ...f.locals].map(([n]) => n);
+    const names = new Map([...f.params, ...f.locals].map(([n], i) => [n, i]));
     const cx = {
       labels: [],
       local: (n) => {
-        const i = names.indexOf(n);
-        if (i < 0) throw new Error(`${f.name}: no local ${n}`);
+        const i = names.get(n);
+        if (i === undefined) throw new Error(`${f.name}: no local ${n}`);
         return i;
       },
       global: (n) => {
