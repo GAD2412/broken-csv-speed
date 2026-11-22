@@ -1,5 +1,5 @@
 'use strict';
-// fast.cjs: the harness program (main.ts is a symbolic link to it). Reads /input/cases.json and writes
+// fast.cjs: the harness program (main.ts only calls main()). Reads /input/cases.json and writes
 // /output/answers.json, doing the CSV reading on the text's JSON-escaped bytes, never decoding it into JS strings.
 //
 // Why that is exact: in the JSON text every character the CSV reading looks at is ASCII and appears as `,` or as the
@@ -888,7 +888,3 @@ function main() {
 }
 
 module.exports = { Csv, fastPath, slowPath, main };
-
-// main.ts is a symbolic link to this file: Node resolves it and runs it as CommonJS, with no TypeScript stripping.
-// (Were main.ts a copy of this file instead, it would be the main module just the same.)
-if (require.main === module) main();
