@@ -561,7 +561,9 @@ const PROGRAM = `[
     ["inc","i"]]],
   ["ret",0]]},
 // A quoted field whose opening \\" is at p.
-{"n":"quo","p":[],"r":0,"l":["i","k","b","ch","lim","open","openLine","start","before","s"],"v":["v"],"b":[
+{"n":"quo","p":[],"r":0,"l":["i","k","b","ch","lim","open","openLine","start","before","s"],"v":["v","c92","c34","c32"],"b":[
+// The comparison vectors, made once a call (the baseline compiler would make them anew at each use).
+  ["=","c92",["splat",92]],["=","c34",["splat",34]],["=","c32",["splat",32]],
   ["=","open",["g","p"]],["=","openLine",["g","line"]],["=","start",["g","o"]],
   ["=","i",["+",["g","p"],2]],["=","k",["g","o"]],
   ["=","lim",["+","i",["-",["g","oMax"],"k"]]],
@@ -570,7 +572,7 @@ const PROGRAM = `[
 // 16 bytes at a time up to the next backslash, raw quote or control byte (commas are content here).
     ["if",["<=",["+","i",16],"lim"],[
       ["=","v",["vld","i"]],["vst","k","v"],
-      ["=","s",["ctz",["|",["specials","v"],65536]]],
+      ["=","s",["ctz",["|",["bitmask",["vor",["vor",["veq","v","c92"],["veq","v","c34"]],["vltu","v","c32"]]],65536]]],
       ["=","i",["+","i","s"]],["=","k",["+","k","s"]],
       ["if",["==","s",16],[["continue","L"]]]]],
     ["=","b",["ld8","i"]],
@@ -632,8 +634,12 @@ const PROGRAM = `[
   ["if",["<","n",0],[["g=","eof",1],["ret"]]],
   ["g=","inEnd","n"],["g=","p","$IN"],["g=","te","n"]]},
 // Reads the text that starts at ts up to its closing quote, writing its records: 0, or -1 to give up.
-{"n":"answer","p":["ts"],"r":1,"x":1,"v":["v"],"l":["recStart","count","width","inX","oRow","xStart","xEnd","lastQ",
-  "lastStart","f","ch","n","i","k","b","lim","fs","s","pm","nc","tl","q","kk","xs","xr","xm","xj","xb"],"b":[
+{"n":"answer","p":["ts"],"r":1,"x":1,"v":["v","c92","c34","c32","c44","lo8","q8"],"l":["recStart","count","width",
+  "inX","oRow","xStart","xEnd","lastQ","lastStart","f","ch","n","i","k","b","lim","fs","s","pm","nc","tl","q","kk",
+  "p0","p1","xs","xr","xm","xj","xb"],"b":[
+// The comparison and shuffle vectors, made once a call (the baseline compiler would make them anew at each use).
+  ["=","c92",["splat",92]],["=","c34",["splat",34]],["=","c32",["splat",32]],["=","c44",["splat",44]],
+  ["=","lo8",["LOW8"]],["=","q8",["Q8"]],
   ["=","width",-1],["g=","te",["g","inEnd"]],["g=","teFound",0],["g=","p","ts"],["g=","line",1],
   ["g=","e","$ERR"],["g=","xa","$XA"],["g=","rec",0],["g=","fail",0],
   ["if",["all",["==",["ld8",["g","p"]],239],["==",["ld8",["g","p"],1],187],["==",["ld8",["g","p"],2],191]],
@@ -683,18 +689,16 @@ const PROGRAM = `[
           ["if",[">","i","tl"],[["break","V"]]],
           ["if",[">","k",["-","$OUTEND",1088]],[["break","V"]]],
           ["=","v",["vld","i"]],
-          ["=","s",["ctz",["|",["specials","v"],65536]]],
-          ["=","pm",["&",["commas","v"],["-",["<<",1,"s"],1]]],
-          ["=","nc",["popcnt","pm"]],
+          ["=","s",["ctz",["|",["bitmask",["vor",["vor",["veq","v","c92"],["veq","v","c34"]],["vltu","v","c32"]]],65536]]],
+          ["=","pm",["&",["bitmask",["veq","v","c44"]],["-",["<<",1,"s"],1]]],
+          ["=","p0",["popcnt",["&","pm",255]]],["=","p1",["popcnt",[">>u","pm",8]]],
+          ["=","nc",["+","p0","p1"]],
 // The common block: 16 plain bytes and commas, at most 4 commas in each half, no long-row boundary.
-          ["if",["all",["==","s",16],["<=",["popcnt",["&","pm",255]],4],["<=",["popcnt",[">>u","pm",8]],4],
-              ["|",["<","width",0],["<",["+","count","nc"],"width"]]],[
-            ["=","xm",["&","pm",255]],
-            ["vst","k",["swizzle",["vor",["vand","v",["LOW8"]],["Q8"]],["vld",["<<","xm",4],"$TBL"]]],
-            ["=","k",["+","k",["+",8,["<<",["popcnt","xm"],1]]]],
-            ["=","xm",[">>u","pm",8]],
-            ["vst","k",["swizzle",["vor",["vand",["vld","i",8],["LOW8"]],["Q8"]],["vld",["<<","xm",4],"$TBL"]]],
-            ["=","k",["+","k",["+",8,["<<",["popcnt","xm"],1]]]],
+          ["if",["all",["==","s",16],["<=","p0",4],["<=","p1",4],["|",["<","width",0],["<",["+","count","nc"],"width"]]],[
+            ["vst","k",["swizzle",["vor",["vand","v","lo8"],"q8"],["vld",["<<",["&","pm",255],4],"$TBL"]]],
+            ["=","k",["+","k",["+",8,["<<","p0",1]]]],
+            ["vst","k",["swizzle",["vor",["vand",["vld","i",8],"lo8"],"q8"],["vld",["<<",[">>u","pm",8],4],"$TBL"]]],
+            ["=","k",["+","k",["+",8,["<<","p1",1]]]],
             ["if","nc",[["=","count",["+","count","nc"]],["=","fs",["-","k",["-",16,["-",32,["clz","pm"]]]]]]],
             ["inc","i",16],["continue","V"]]],
           ["if",["&",[">=","width",0],[">=",["+","count","nc"],"width"]],[["break","V"]]],
@@ -713,7 +717,7 @@ const PROGRAM = `[
                 ["if",[">","q","tl"],[["break","V"]]],
                 ["if",[">","kk",["-","$OUTEND",1088]],[["break","V"]]],
                 ["=","v",["vld","q"]],["vst","kk","v"],
-                ["=","s",["ctz",["|",["specials","v"],65536]]],
+                ["=","s",["ctz",["|",["bitmask",["vor",["vor",["veq","v","c92"],["veq","v","c34"]],["vltu","v","c32"]]],65536]]],
                 ["=","q",["+","q","s"]],["=","kk",["+","kk","s"]],
                 ["if",["<","s",16],[["break","Q"]]]]],
               ["if",["all",["==",["ld8","q"],92],["==",["ld8","q",1],34],["==",["ld8","q",2],44]],[
